@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Speed Test Real (Cloudflare) - kbps</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    body {
+      margin: 0;
+      background: #121212;
+      color: white;
+      font-family: Arial, sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 20px;
+    }
+    h1 {
+      margin-bottom: 20px;
+    }
+    .gauge {
+      width: 300px;
+      height: 150px;
+      background: conic-gradient(#0f0 0%, #ff0 50%, #f00 100%);
+      border-radius: 50% 50% 0 0 / 100% 100% 0 0;
+      position: relative;
+      overflow: hidden;
+    }
+    .needle {
+      width: 4px;
+      height: 75%;
+      background: white;
+      position: absolute;
+      bottom: 0;
+      left: 50%;
+      transform-origin: bottom;
+      transform: rotate(0deg);
+      transition: transform 0.3s ease-in-out;
+    }
+    .label {
+      margin-top: 20px;
+      font-size: 1.5em;
+      text-align: center;
+    }
+    .ping {
+      margin-top: 10px;
+      font-size: 1.2em;
+      color: #aaa;
+    }
+    .result {
+      margin-top: 20px;
+      font-size: 1.5em;
+      color: #00e6b8;
+      font-weight: bold;
+    }
+    button {
+      margin-top: 20px;
+      padding: 10px 20px;
+      font-size: 1em;
+      border: none;
+      border-radius: 10px;
+      background: #00e6b8;
+      color: black;
+      cursor: pointer;
+    }
+    canvas {
+      margin-top: 40px;
+      max-width: 100%;
+      background: #1e1e1e;
+      border-radius: 15px;
+    }
+  </style>
+</head>
+<body>
+  <h1>🌐 Uji Kecepatan Real-time (Cloudflare) - kbps</h1>
+  <div class="gauge">
+    <div class="needle" id="needle"></div>
+  </div>
+  <div class="label">
+    Kecepatan: <span id="speed">0</span> kbps
+  </div>
+  <div class="ping">Ping: <span id="ping">-</span> ms</div>
+  <button id="testBtn">▶ Mulai Tes</button>
+  <div class="result" id="resultText"></div>
+  <canvas id="speedChart" width="400" height="200"></canvas>
+
+  <script>
+    const needle = document.getElementById("needle");
+    const speedText = document.getElementById("speed");
+    const pingText = document.getElementById("ping");
+    const testBtn = document.getElementById("testBtn");
+    const resultText = document.getElementById("resultText");
+    const ctx = document.getElementById('speedChart').getContext('2d');
+
+    let speedData = {
+      labels: [],
+      datasets: [{
+        label: 'Kecepatan (kbps)',
+        data: [],
+        borderColor: '#00e6b8',
+        backgroundColor: 'rgba(0, 230, 184, 0.1)',
+        tension: 0.4
+      }]
+    };
+
+    let speedChart = new Chart(ctx, {
+      type: 'line',
+      data: speedData,
+      options: {
+        responsive: true,
+        animation: false,
+        scales: {
+          x: { title: { display: true, text: 'Waktu (detik)' } },
+          y: { title: { display: true, text: 'kbps' }, beginAtZero: true }
+        },
+        plugins: {
+          legend: { display: false }
+        }
+      }
+    });
+
+    let running = false;
+    let secondCounter = 0;
+
+    function updateGauge(speedKbps) {
+      const maxKbps = 200000;
+      const degree = Math.min(speedKbps, maxKbps) / maxKbps * 180;
+      needle.style.transform = `rotate(${degree}deg)`;
+      speedText.textContent = speedKbps.toFixed(0);
+    }
+
+    function updateChart(second, speedKbps) {
+      speedChart.data.labels.push(second + "s");
+      speedChart.data.datasets[0].data.push(speedKbps);
+      speedChart.update();
+    }
+
+    async function measurePing() {
+      const pingStart = Date.now();
+      try {
+        await fetch("https://www.google.com/favicon.ico?" + Math.random(), { mode: "no-cors" });
+        const pingTime = Date.now() - pingStart;
+        pingText.textContent = pingTime;
+      } catch {
+        pingText.textContent = "Gagal";
+      }
+    }
+
+    async function measureSpeed() {
+      const testURL = "https://speed.cloudflare.com/__down?bytes=500000";
+      const start = Date.now();
+      try {
+        const response = await fetch(testURL);
+        const blob = await response.blob();
+        const duration = (Date.now() - start) / 1000;
+        const sizeMB = blob.size / (1024 * 1024);
+        let speedMbps = (sizeMB * 8) / duration;
+        let speedKbps = speedMbps * 100;
+        secondCounter++;
+        updateGauge(speedKbps);
+        updateChart(secondCounter, speedKbps);
+      } catch {
+        updateGauge(0);
+        updateChart(secondCounter, 0);
+      }
+    }
+
+    function evaluateNetworkQuality() {
+      const data = speedData.datasets[0].data;
+      if (data.length === 0) return;
+
+      const sum = data.reduce((a, b) => a + b, 0);
+      const avg = sum / data.length;
+
+      let result = "";
+      if (avg > 1000) {
+        result = "✅ Jaringan Bagus (≥ 1 Mbps)";
+      } else {
+        result = "❌ Jaringan Jelek (< 1 Mbps)";
+      }
+
+      resultText.textContent = `Hasil Tes: ${result} | Rata-rata: ${avg.toFixed(0)} kbps`;
+    }
+
+    async function testLoop() {
+      const startTime = Date.now();
+
+      while (running) {
+        await measurePing();
+        await measureSpeed();
+
+        if ((Date.now() - startTime) >= 30000) {
+          running = false;
+          testBtn.textContent = "▶ Mulai Tes";
+          evaluateNetworkQuality();
+        }
+
+        await new Promise(r => setTimeout(r, 100));
+      }
+    }
+
+    testBtn.addEventListener("click", () => {
+      if (!running) {
+        running = true;
+        resultText.textContent = "";
+        testBtn.textContent = "⏹ Berhenti";
+        speedData.labels = [];
+        speedData.datasets[0].data = [];
+        speedChart.update();
+        secondCounter = 0;
+        testLoop();
+      } else {
+        running = false;
+        testBtn.textContent = "▶ Mulai Tes";
+      }
+    });
+  </script>
+</body>
+</html>
